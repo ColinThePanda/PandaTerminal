@@ -1,38 +1,15 @@
+from __future__ import annotations
 import sys
 import os
 import ctypes
 from panda_math import ivec2
 
 
-def ansi(ansi: str):
-    sys.stdout.write(f"\033{ansi}")
-    sys.stdout.flush()
-
-
-def new_window():
-    ansi("[?1049h")
-
-
-def original_window():
-    ansi("[?104l")
-
-
-def hide_cursor():
-    ansi("[?25l")
-
-
-def show_cursor():
-    ansi("[?25h")
-
-
-def get_terminal_size():
-    return ivec2(os.get_terminal_size())
-
-
 class Cursor:
-    def __init__(self):
+    def __init__(self, term: Terminal):
         self._handle = ctypes.windll.kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
         self._pos = self._get_pos()
+        self._term = term
 
     def _get_pos(self):
         class COORD(ctypes.Structure):
@@ -62,15 +39,14 @@ class Cursor:
         return ivec2(csbi.dwCursorPosition.X, csbi.dwCursorPosition.Y)
 
     @property
-    def position(self):
+    def pos(self):
         return self._get_pos()
 
-    @position.setter
-    def position(self, value):
+    def move(self, value):
         self._pos = ivec2(value)
         self._pos.x = max(self._pos.x, 0)
         self._pos.y = max(self._pos.y, 0)
-        terminal_size = ivec2(get_terminal_size())
+        terminal_size = ivec2(self._term.size)
         self._pos.x = min(self._pos.x, terminal_size.x)
         self._pos.y = min(self._pos.y, terminal_size.y)
 
@@ -82,42 +58,50 @@ class Cursor:
         )
 
     def update_pos(self):
-        ansi(f"[{self.position.y};{self.position.x}]")
+        self._term.ansi(f"[{self.pos.y};{self.pos.x}]")
 
 
-class Window:
-    def __init__(self, show_cursor: bool = True):
-        self.cursor: Cursor = Cursor()
-        self._show_cursor = show_cursor
-
-    @property
-    def show_cursor(self):
-        return self._show_cursor
-
-    @show_cursor.setter
-    def show_cursor(self, value: bool):
-        if value:
-            self._show_cursor = True
-            show_cursor()
-        else:
-            self._show_cursor = False
-            hide_cursor()
-
-    @property
-    def size(self) -> ivec2:
-        return ivec2(get_terminal_size())
+class Terminal:
+    def __init__(self, seperate: bool) -> None:
+        self._show_cursor: bool = True
+        self.seperate = seperate
+        self._cursor = Cursor(self)
 
     def __enter__(self):
-        if not self.show_cursor:
-            hide_cursor()
-        new_window()
+        if self.seperate:
+            self.ansi("[?1049h")  # new win
         self.clear()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if not self.show_cursor:
-            show_cursor()
-        original_window()
+        self.ansi("[?25h")  # show cursor
+        self.ansi("[?1049l")  # origninal window
+
+    def ansi(self, ansi: str):
+        sys.stdout.write(f"\033{ansi}")
+        sys.stdout.flush()
 
     def clear(self):
         os.system("cls" if os.name == "nt" else "clear")
+
+    @property
+    def size(self) -> ivec2:
+        return ivec2(os.get_terminal_size())
+
+    @property
+    def show_cursor(self) -> bool:
+        return self._show_cursor
+
+    @show_cursor.setter
+    def show_cursor(self, value: bool):
+        if value == True:
+            self.ansi("[?25h")
+        else:
+            self.ansi("[?25l")
+
+    @property
+    def cursor_pos(self) -> ivec2:
+        return self._cursor.pos
+
+    def move_cursor(self, position: ivec2):
+        self._cursor.move(position)

@@ -1,6 +1,7 @@
 import platform
+from typing import TYPE_CHECKING
 
-if platform.system() == "Windows":
+if platform.system() == "Windows" or (TYPE_CHECKING and sys.platform == "win32"):
     import msvcrt  # windows import
 else:
     import termios, tty, sys  # unix imports
@@ -130,71 +131,72 @@ class Key(*bases):
     pass
 
 
-def _read_char_win() -> str:
-    return msvcrt.getwch()
+if platform.system() == "Windows" or (TYPE_CHECKING and sys.platform == "win32"):
 
+    def _read_char_win() -> str:
+        return msvcrt.getwch()
 
-def _read_key_win():
-    ch = _read_char_win()
+    def _read_key_win():
+        ch = _read_char_win()
 
-    if ch == Key.CTRL_C:
-        raise KeyboardInterrupt
+        if ch == Key.CTRL_C:
+            raise KeyboardInterrupt
 
-    if ch in "\x00\xe0":
-        ch = "\x00" + _read_char_win()
+        if ch in "\x00\xe0":
+            ch = "\x00" + _read_char_win()
 
-    if "\ud800" <= ch <= "\udfff":
-        ch += _read_char_win()
-        ch = ch.encode("utf-16", errors="surrogatepass").decode("utf-16")
+        if "\ud800" <= ch <= "\udfff":
+            ch += _read_char_win()
+            ch = ch.encode("utf-16", errors="surrogatepass").decode("utf-16")
 
-    return ch
+        return ch
 
+else:
 
-def _read_char_unix() -> str:
-    fd = sys.stdin.fileno()
-    old = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old)
-    return ch
+    def _read_char_unix() -> str:
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        return ch
 
+    def _read_key_unix() -> str:
+        c1 = _read_char_unix()
 
-def _read_key_unix() -> str:
-    c1 = _read_char_unix()
+        if c1 in Key.CTRL_Z:
+            raise KeyboardInterrupt
 
-    if c1 in Key.CTRL_Z:
-        raise KeyboardInterrupt
+        if c1 != "\x1b":
+            return c1
 
-    if c1 != "\x1b":
-        return c1
+        c2 = _read_char_unix()
+        if c2 not in "\x4f\x5b":
+            return c1 + c2
 
-    c2 = _read_char_unix()
-    if c2 not in "\x4f\x5b":
-        return c1 + c2
+        c3 = _read_char_unix()
+        if c3 not in "\x31\x32\x33\x35\x36":
+            return c1 + c2 + c3
 
-    c3 = _read_char_unix()
-    if c3 not in "\x31\x32\x33\x35\x36":
-        return c1 + c2 + c3
+        c4 = _read_char_unix()
+        if c4 not in "\x30\x31\x33\x34\x35\x37\x38\x39":
+            return c1 + c2 + c3 + c4
 
-    c4 = _read_char_unix()
-    if c4 not in "\x30\x31\x33\x34\x35\x37\x38\x39":
-        return c1 + c2 + c3 + c4
-
-    c5 = _read_char_unix()
-    return c1 + c2 + c3 + c4 + c5
+        c5 = _read_char_unix()
+        return c1 + c2 + c3 + c4 + c5
 
 
 def read_char() -> str:
-    if platform.system() == "Windows":
+    if platform.system() == "Windows" or (TYPE_CHECKING and sys.platform == "win32"):
         return _read_char_win()
     else:
         return _read_char_unix()
 
 
 def read_key() -> str:
-    if platform.system() == "Windows":
+    if platform.system() == "Windows" or (TYPE_CHECKING and sys.platform == "win32"):
         return _read_key_win()
     else:
         return _read_key_unix()
