@@ -61,11 +61,87 @@ class Cursor:
         self._term.ansi(f"[{self.pos.y};{self.pos.x}]")
 
 
+class DoubleBuffer:
+    """Double buffer implementation to reduce flicker"""
+
+    def __init__(self, width: int, height: int):
+        self.width = width
+        self.height = height
+        # Use lists of strings for each row
+        self.back_buffer = [[" " for _ in range(width)] for _ in range(height)]
+        self.front_buffer = [[" " for _ in range(width)] for _ in range(height)]
+
+    def clear(self):
+        """Clear the back buffer"""
+        self.back_buffer = [
+            [" " for _ in range(self.width)] for _ in range(self.height)
+        ]
+        # Clear front buffer too so all spaces are considered changes and get drawn
+        self.front_buffer = [
+            ["X" for _ in range(self.width)] for _ in range(self.height)
+        ]  # Use different char to force redraw
+
+    def write(self, x: int, y: int, text: str):
+        """Write text to the back buffer at position (x, y)"""
+        if not (0 <= y < self.height):
+            return
+
+        x = max(0, x)
+        if x >= self.width:
+            return
+
+        # For colored text, we need to handle ANSI codes specially
+        # This is a simplified version - just write character by character
+        for i, char in enumerate(text):
+            if x + i < self.width:
+                self.back_buffer[y][x + i] = char
+
+    def set_char(self, x: int, y: int, char: str):
+        """Set a single character (or colored string) at position (x, y)"""
+        if 0 <= x < self.width and 0 <= y < self.height:
+            self.back_buffer[y][x] = char  # Store the whole string, not just one char
+
+    def swap(self) -> str:
+        commands = []
+        for y in range(self.height):
+            x = 0
+            while x < self.width:
+                # Skip unchanged
+                while (
+                    x < self.width and self.back_buffer[y][x] == self.front_buffer[y][x]
+                ):
+                    x += 1
+                if x >= self.width:
+                    break
+
+                start_x = x
+                changed_chars = []
+                while (
+                    x < self.width and self.back_buffer[y][x] != self.front_buffer[y][x]
+                ):
+                    changed_chars.append(self.back_buffer[y][x])
+                    self.front_buffer[y][x] = self.back_buffer[y][x]
+                    x += 1
+
+                text = "".join(changed_chars)
+                commands.append(f"\033[{y + 1};{start_x + 1}H{text}")
+
+        return "".join(commands)
+
+
 class Terminal:
-    def __init__(self, seperate: bool) -> None:
+    def __init__(self, seperate: bool, double_buffer: bool = True) -> None:
         self._show_cursor: bool = True
         self.seperate = seperate
         self._cursor = Cursor(self)
+        self._double_buffer = double_buffer
+        self._buffer = None
+        self._cached_size = None
+
+        if double_buffer:
+            size = self.size
+            self._cached_size = size
+            self._buffer = DoubleBuffer(*size)
 
     def __enter__(self):
         if self.seperate:
@@ -75,14 +151,17 @@ class Terminal:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.ansi("[?25h")  # show cursor
-        self.ansi("[?1049l")  # origninal window
+        self.ansi("[?1049l")  # original window
 
     def ansi(self, ansi: str):
         sys.stdout.write(f"\033{ansi}")
         sys.stdout.flush()
 
     def clear(self):
-        os.system("cls" if os.name == "nt" else "clear")
+        if self._double_buffer and self._buffer:
+            self._buffer.clear()
+        else:
+            os.system("cls" if os.name == "nt" else "clear")
 
     @property
     def size(self) -> ivec2:
@@ -94,6 +173,7 @@ class Terminal:
 
     @show_cursor.setter
     def show_cursor(self, value: bool):
+        self._show_cursor = value
         if value == True:
             self.ansi("[?25h")
         else:
@@ -105,3 +185,46 @@ class Terminal:
 
     def move_cursor(self, position: ivec2):
         self._cursor.move(position)
+
+    def _check_and_resize(self):
+        """Check if terminal was resized and recreate buffer if needed"""
+        if self._double_buffer and self._cached_size:
+            current_size = self.size
+            if (
+                self._cached_size.x != current_size.x
+                or self._cached_size.y != current_size.y
+            ):
+                self._cached_size = current_size
+                self._buffer = DoubleBuffer(current_size.x, current_size.y)
+
+    def write(self, x: int, y: int, text: str):
+        """Write text at position (x, y). Uses double buffer if enabled."""
+        if self._double_buffer and self._buffer:
+            self._buffer.write(x, y, text)
+        else:
+            # Fallback to direct writing
+            self.move_cursor(ivec2(x, y))
+            sys.stdout.write(text)
+            sys.stdout.flush()
+
+    def set_char(self, x: int, y: int, char: str):
+        """Set a single character at position (x, y). Uses double buffer if enabled."""
+        if self._double_buffer and self._buffer:
+            self._buffer.set_char(x, y, char)
+        else:
+            self.write(x, y, char)
+
+    def render(self):
+        """Render the back buffer to screen (only works with double buffering)"""
+        if self._double_buffer and self._buffer:
+            self._check_and_resize()
+            commands = self._buffer.swap()
+            if commands:
+                sys.stdout.write(commands)
+                sys.stdout.flush()
+
+    def resize_buffer(self):
+        """Resize the buffer if terminal size changed"""
+        if self._double_buffer:
+            size = self.size
+            self._buffer = DoubleBuffer(size.x, size.y)
