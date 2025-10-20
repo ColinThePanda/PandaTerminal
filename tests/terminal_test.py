@@ -1,4 +1,4 @@
-from src.panda_terminal import Terminal
+from panda_terminal import Terminal
 from panda_color import Colors, color_text
 import time
 import math
@@ -14,7 +14,6 @@ def stress_test_1_massive_updates(term: Terminal):
     frames = 0
     test_duration = 3.0  # Run for 3 seconds
     chars = ["░", "▒", "▓", "█"]
-    colors = [Colors.RED, Colors.GREEN, Colors.BLUE]
 
     while time.time() - start_time < test_duration:
         term.clear()
@@ -22,10 +21,9 @@ def stress_test_1_massive_updates(term: Terminal):
         width = term.size.x
 
         # Fill the entire screen with characters
-        char = color_text(chars[frames % 4], colors[frames % 3])
+        char = chars[frames % 4]
         for y in range(height):
-            for x in range(width):
-                term.write(x, y, char)
+            term.write(0, y, char * width)
 
         term.write(5, 5, f"Frame: {frames} - FULL SCREEN UPDATE")
         term.render()
@@ -186,7 +184,7 @@ def stress_test_6_matrix_effect(term: Terminal):
     time.sleep(1)
 
     columns = []
-    chars = list("01アイウエオカキクケコサシスセソ")
+    chars = list("0123456789!@#$%^&*")
     last_width = 0
 
     start_time = time.time()

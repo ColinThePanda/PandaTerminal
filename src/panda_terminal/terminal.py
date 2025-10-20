@@ -67,7 +67,6 @@ class DoubleBuffer:
     def __init__(self, width: int, height: int):
         self.width = width
         self.height = height
-        # Use lists of strings for each row
         self.back_buffer = [[" " for _ in range(width)] for _ in range(height)]
         self.front_buffer = [[" " for _ in range(width)] for _ in range(height)]
 
@@ -76,10 +75,9 @@ class DoubleBuffer:
         self.back_buffer = [
             [" " for _ in range(self.width)] for _ in range(self.height)
         ]
-        # Clear front buffer too so all spaces are considered changes and get drawn
         self.front_buffer = [
             ["X" for _ in range(self.width)] for _ in range(self.height)
-        ]  # Use different char to force redraw
+        ]
 
     def write(self, x: int, y: int, text: str):
         """Write text to the back buffer at position (x, y)"""
@@ -90,8 +88,6 @@ class DoubleBuffer:
         if x >= self.width:
             return
 
-        # For colored text, we need to handle ANSI codes specially
-        # This is a simplified version - just write character by character
         for i, char in enumerate(text):
             if x + i < self.width:
                 self.back_buffer[y][x + i] = char
@@ -99,7 +95,7 @@ class DoubleBuffer:
     def set_char(self, x: int, y: int, char: str):
         """Set a single character (or colored string) at position (x, y)"""
         if 0 <= x < self.width and 0 <= y < self.height:
-            self.back_buffer[y][x] = char  # Store the whole string, not just one char
+            self.back_buffer[y][x] = char
 
     def swap(self) -> str:
         commands = []
@@ -130,7 +126,7 @@ class DoubleBuffer:
 
 
 class Terminal:
-    def __init__(self, seperate: bool, double_buffer: bool = True) -> None:
+    def __init__(self, seperate: bool = True, double_buffer: bool = False) -> None:
         self._show_cursor: bool = True
         self.seperate = seperate
         self._cursor = Cursor(self)
@@ -143,7 +139,7 @@ class Terminal:
             self._cached_size = size
             self._buffer = DoubleBuffer(*size)
 
-    def __enter__(self):
+    def __enter__(self) -> "Terminal":
         if self.seperate:
             self.ansi("[?1049h")  # new win
         self.clear()
@@ -196,6 +192,9 @@ class Terminal:
             ):
                 self._cached_size = current_size
                 self._buffer = DoubleBuffer(current_size.x, current_size.y)
+
+    def print(self, text: str):
+        self.write(self._cursor.pos.x, self._cursor.pos.y, text)
 
     def write(self, x: int, y: int, text: str):
         """Write text at position (x, y). Uses double buffer if enabled."""

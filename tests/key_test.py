@@ -1,4 +1,4 @@
-from src.panda_terminal import read_key, Key
+from panda_terminal import read_key, Key
 
 key = read_key()
 
